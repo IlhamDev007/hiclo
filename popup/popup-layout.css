@@ -1,0 +1,56 @@
+/* Root geometry belongs here, after component styles. In a real action popup,
+   fixed intrinsic dimensions break Chrome's viewport/auto-size feedback loop. */
+html[data-view="popup"] {
+  width: 418px;
+  height: 600px;
+  min-width: 418px;
+  min-height: 600px;
+  max-height: none;
+  overflow: hidden;
+}
+html[data-view="popup"] body {
+  width: 418px;
+  min-width: 418px;
+  height: var(--popup-body-height, 600px);
+  min-height: var(--popup-body-height, 600px);
+  max-height: none;
+}
+html[data-view="page"] {
+  width: min(418px, 100%);
+  height: min(600px, 100dvh);
+  max-height: none;
+  overflow: hidden;
+}
+html[data-view="page"] body {
+  width: 100%;
+  min-width: 280px;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+}
+html[data-view] body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+html[data-view] body main {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+html[data-view] body main::-webkit-scrollbar { width: 8px; }
+html[data-view] body main::-webkit-scrollbar-track { background: var(--bg); }
+html[data-view] body main::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border: 2px solid var(--bg);
+  border-radius: 8px;
+}
+html[data-view] body header,
+html[data-view] body footer,
+html[data-view] .apply-bar {
+  flex: 0 0 auto;
+}
