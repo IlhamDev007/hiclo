@@ -15,7 +15,7 @@
       asset: assets.includes(value.asset) || /^upload-[a-z0-9-]+$/.test(value.asset || '') ? value.asset : 'spider-man',
       name: typeof value.name === 'string' ? value.name.slice(0, 50) : 'Charm',
       x: clamp(value.x, .8, .02, .98), y: 0,
-      size: clamp(value.size, 90, 40, 180), length: clamp(value.length, 170, 50, 420),
+      size: clamp(value.size, 90, 40, 180), length: clamp(value.length, 110, 50, 420),
       hook: ['steel', 'forged', 'royal', 'eye'].includes(value.hook) ? value.hook : design.hook,
       rope: ['silk', 'braid', 'chain', 'none'].includes(value.rope) ? value.rope : design.rope,
       color: /^#[a-f0-9]{6}$/i.test(value.color || '') ? value.color : design.color,

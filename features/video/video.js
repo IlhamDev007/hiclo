@@ -50,7 +50,7 @@ export async function videoAction(action = 'inspect') {
     return state();
   } catch (error) {
     let message = error.message;
-    if (error.name === 'NotAllowedError') message = 'The browser blocked the request. Click Pop out again, or use the player’s Picture-in-Picture control.';
+    if (error.name === 'NotAllowedError') message = 'The browser blocked the request. Click Always on Top again, or use the player’s Picture-in-Picture control.';
     if (error.name === 'SecurityError') message = 'This website or embedded player blocks Picture-in-Picture.';
     if (error.name === 'InvalidStateError') message = 'Wait for the video to start playing, then try again.';
     return { ...state(), error: message };

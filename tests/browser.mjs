@@ -194,7 +194,7 @@ try {
   // Real native PiP, entered via the popup's user gesture, not a stub API.
   await page.waitForFunction(() => document.querySelector('video').readyState >= 2);
   await popup.reload();
-  await popup.waitForFunction(() => document.getElementById('video-status').textContent.includes('Video ready'));
+  await popup.waitForFunction(() => document.getElementById('video-status').textContent.includes('Keep a playing video'));
   await popup.locator('#pop-video').click();
   await page.waitForFunction(() => !!document.pictureInPictureElement);
   await popup.locator('#video-play').click();
@@ -224,13 +224,15 @@ try {
   const embedded = await page.waitForEvent('framenavigated', { predicate: frame => frame.url().endsWith('/embedded') });
   await embedded.waitForFunction(() => document.querySelector('video').readyState >= 2 && !document.querySelector('video').paused);
   await popup.reload();
-  await popup.waitForFunction(() => document.getElementById('video-status').textContent.includes('Video ready'));
+  await popup.waitForFunction(() => document.getElementById('video-status').textContent.includes('Keep a playing video'));
   await popup.locator('#pop-video').click();
   await embedded.waitForFunction(() => !!document.pictureInPictureElement);
   assert.equal(await page.evaluate(() => !!document.pictureInPictureElement), false);
   await patch({ enabled: false });
   await embedded.waitForFunction(() => !document.pictureInPictureElement);
   await patch({ enabled: true });
+  await popup.locator('#pop-video').click();
+  await embedded.waitForFunction(() => !!document.pictureInPictureElement);
   await popup.locator('#pop-video').click();
   await embedded.waitForFunction(() => !document.pictureInPictureElement);
   await mkdir(join(root, 'test-results'), { recursive: true });

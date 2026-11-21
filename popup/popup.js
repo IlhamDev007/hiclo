@@ -1,5 +1,6 @@
 import { DEFAULTS, normalize, normalizeDisplay, normalizeSites, siteKey, resolveDisplay } from '../shared/settings.js';
 import { videoAction } from '../features/video/video.js';
+import { pageAction } from '../features/video/page.js';
 const $ = id => document.getElementById(id);
 document.querySelector('.brand').addEventListener('click', event => { event.preventDefault(); document.querySelector('[data-panel="display"]').click(); });
 let settings = { ...DEFAULTS };
@@ -200,32 +201,37 @@ $('reset-all').addEventListener('click', async () => {
 });
 function renderVideo(state) {
   videoState = state;
-  $('pop-video').textContent = state?.active ? 'Return ↙' : 'Pop out ↗';
-  $('video-controls').hidden = !state?.active;
+  $('pop-video').textContent = state?.active ? 'Return to tab' : 'Always on Top';
+  $('video-controls').hidden = !state?.active || state.kind === 'page';
   $('video-play').textContent = state?.paused ? 'Play' : 'Pause';
   $('video-mute').textContent = state?.muted ? 'Unmute' : 'Mute';
-  $('video-status').textContent = state?.error || (state?.active ? 'Floating above your other windows.' : state?.found ? state.supported ? 'Video ready for Picture-in-Picture.' : 'This player blocks Picture-in-Picture.' : 'Start a video, then pop it out.');
+  $('video-status').textContent = state?.error || (state?.active ? 'Floating above other windows' : 'Keep a playing video or this page above other windows.');
 }
 async function refreshVideo() {
-  if (!currentSite) { renderVideo({ error: 'Open a supported video website first.' }); return; }
+  if (!currentSite) { renderVideo({ error: 'Open a supported webpage first.' }); return; }
+  const [page] = await chrome.scripting.executeScript({ target: { tabId: currentTab.id, frameIds: [0] }, func: pageAction, args: ['inspect'] });
+  if (page?.result?.active) { videoFrame = 0; renderVideo(page.result); return; }
   const frames = await chrome.scripting.executeScript({ target: { tabId: currentTab.id, allFrames: true }, func: videoAction, args: ['inspect'] });
-  const best = frames.filter(frame => frame.result?.found).sort((a, b) => b.result.score - a.result.score)[0];
-  videoFrame = best?.frameId ?? null;
-  renderVideo(best?.result);
+  const best = frames.filter(frame => frame.result?.active || (frame.result?.found && !frame.result.paused)).sort((a, b) => b.result.score - a.result.score)[0];
+  videoFrame = best?.frameId ?? 0;
+  renderVideo(best?.result || page?.result);
 }
 async function controlVideo(action) {
   $('pop-video').disabled = true;
   try {
-    if (!settings.enabled && action !== 'close') throw new Error('Resume the extension before using video controls.');
-    if (videoFrame === null) await refreshVideo();
-    if (videoFrame === null) throw new Error('Start a video on this page, then try again.');
-    const [response] = await chrome.scripting.executeScript({ target: { tabId: currentTab.id, frameIds: [videoFrame] }, func: videoAction, args: [action] });
+    if (!settings.enabled && action !== 'close') throw new Error('Resume the extension before using Always on Top.');
+    if (!currentSite) throw new Error('Open a supported webpage first.');
+    if (action === 'toggle') {
+      await refreshVideo();
+      action = videoState?.active ? 'close' : 'open';
+    } else if (videoFrame === null) await refreshVideo();
+    const [response] = await chrome.scripting.executeScript({ target: { tabId: currentTab.id, frameIds: [videoFrame] }, func: videoState?.kind === 'page' ? pageAction : videoAction, args: [action] });
     renderVideo(response?.result);
     if (response?.result?.error) toast(response.result.error);
   } catch (error) { renderVideo({ error: error.message }); toast(error.message); videoFrame = null; }
   finally { $('pop-video').disabled = !settings.enabled; }
 }
-$('pop-video').addEventListener('click', () => controlVideo(videoState?.active ? 'close' : 'open'));
+$('pop-video').addEventListener('click', () => controlVideo('toggle'));
 for (const button of document.querySelectorAll('[data-video]')) button.addEventListener('click', () => controlVideo(button.dataset.video));
 async function init() {
   try {

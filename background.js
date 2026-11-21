@@ -92,6 +92,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] }).then(tabs => Promise.allSettled(tabs.map(tab => chrome.scripting.executeScript({
     target: { tabId: tab.id, allFrames: true },
     func: async () => {
+      globalThis.__hicloFloatingPage?.window.close();
       if (globalThis.__stillPip && document.pictureInPictureElement) await document.exitPictureInPicture().catch(() => {});
       globalThis.__stillPip = false;
     }
