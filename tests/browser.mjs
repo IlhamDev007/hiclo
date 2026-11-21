@@ -140,21 +140,21 @@ try {
   await freshOther.reload();
   assert.equal(await freshOther.locator('div[aria-hidden="true"]').count(), 0);
 
-  // Editing after a site apply remains a local preview until explicitly saved.
+  // Further edits automatically update the current site, including its other tabs.
   await popup.locator('#brightness').fill('55');
   await popup.locator('[data-mode="grayscale"]').click();
   await page.waitForFunction(() => document.querySelector('div[aria-hidden="true"]')?.style.backdropFilter.includes('grayscale(1)'));
-  assert.ok((await revisit.locator('div[aria-hidden="true"]').getAttribute('style')).includes('brightness(0.45)'));
+  await revisit.waitForFunction(() => document.querySelector('div[aria-hidden="true"]')?.style.backdropFilter.includes('brightness(0.55)'));
   await popup.locator('#scope-site').click();
   await revisit.waitForFunction(() => document.querySelector('div[aria-hidden="true"]')?.style.backdropFilter.includes('brightness(0.55)'));
   assert.equal(await other.locator('div[aria-hidden="true"]').count(), 0);
 
-  // Closing/reloading the popup discards an unsaved preview.
+  // Closing/reloading the popup preserves automatically saved edits.
   await popup.locator('#brightness').fill('35');
   await page.waitForFunction(() => document.querySelector('div[aria-hidden="true"]')?.style.backdropFilter.includes('brightness(0.35)'));
   await popup.reload();
-  await page.waitForFunction(() => document.querySelector('div[aria-hidden="true"]')?.style.backdropFilter.includes('brightness(0.55)'));
-  await popup.waitForFunction(() => document.getElementById('brightness').value === '55');
+  await page.waitForFunction(() => document.querySelector('div[aria-hidden="true"]')?.style.backdropFilter.includes('brightness(0.35)'));
+  await popup.waitForFunction(() => document.getElementById('brightness').value === '35');
 
   // Only the explicit All Websites action changes the global baseline.
   await popup.locator('#brightness').fill('80');

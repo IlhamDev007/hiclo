@@ -32,7 +32,7 @@ try{
   await popup.locator('[data-joy-add="spider-man"]').click();await count(a,1);await count(b,0);
   assert.equal((await read()).joy.enabled,false);
   await popup.locator('label.power').click();await count(a,0);await count(b,0);
-  assert.equal((await read()).joy.enabled,false,'Pausing a preview must not save it globally');
+  assert.equal((await read()).joy.enabled,false,'Pausing site edits must not save them globally');
   await popup.locator('label.power').click();await count(a,1);
   const fresh=await context.newPage();await fresh.goto(otherOrigin+'/fresh');await count(fresh,0);
   await apply(popup,'site');assert.equal((await read()).joy.enabled,false);

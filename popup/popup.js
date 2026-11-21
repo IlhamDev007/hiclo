@@ -34,7 +34,7 @@ function saveDisplay(patch) {
   draft = normalizeDisplay({ ...displaySettings(), ...patch });
   draftDirty = true; draftRevision++;
   render();
-  $('save-status').textContent = 'Preview only · choose where to apply';
+  $('save-status').textContent = currentSite ? 'Saving…' : 'Preview only · choose where to apply';
   try {
     if (!previewPort) {
       if (!currentSite) return;
@@ -47,18 +47,31 @@ function saveDisplay(patch) {
     }
     previewPort.postMessage({ display: draft });
   } catch { previewPort = null; toast('Reload the page to preview display changes.'); }
+  if (currentSite) {
+    const revision = draftRevision;
+    persist('site', { url: currentTab.url, display: { ...draft } }).then(() => {
+      scope = 'site';
+      if (revision === draftRevision) {
+        draftDirty = false;
+        previewPort?.postMessage({ display: null });
+      }
+      render();
+      $('save-status').textContent = draftDirty ? 'Saving…' : 'Saved on this device';
+    }).catch(() => {});
+  }
 }
 function persist(operation, payload = {}) {
   render();
   $('save-status').textContent = 'Saving…';
-  persistQueue = persistQueue.catch(() => {}).then(async () => {
+  // Dispatch immediately: the background queue survives popup closure.
+  persistQueue = (async () => {
     const response = await chrome.runtime.sendMessage({ type: 'configure', operation, ...payload });
     if (!response?.ok) throw new Error(response?.error || 'Could not save settings.');
     settings = normalize(response.settings);
     siteSettings = normalizeSites(response.siteSettings);
     render();
-  });
-  persistQueue.then(() => { $('save-status').textContent = draftDirty ? 'Preview only · choose where to apply' : 'Saved on this device'; }, () => {
+  })();
+  persistQueue.then(() => { $('save-status').textContent = draftDirty ? (currentSite ? 'Saving…' : 'Preview only · choose where to apply') : 'Saved on this device'; }, () => {
     $('save-status').textContent = 'Could not save'; toast('Settings could not be saved. Please try again.');
   });
   return persistQueue;
@@ -82,12 +95,12 @@ function render() {
   $('brighter').disabled = display.brightness >= 100;
   $('dimmer').disabled = display.brightness <= 0;
   $('scope-site').disabled = !currentSite;
-  $('scope-badge').textContent = draftDirty ? 'PREVIEW' : scope === 'site' ? 'THIS SITE' : 'ALL SITES';
+  $('scope-badge').textContent = draftDirty ? (currentSite ? 'SAVING' : 'PREVIEW') : scope === 'site' ? 'THIS SITE' : 'ALL SITES';
   const custom = currentSite && Object.hasOwn(siteSettings, currentSite);
   $('use-global').disabled = !custom;
-  $('scope-description').textContent = draftDirty ? 'Preview on this tab only. Choose where to save.' : scope === 'site'
+  $('scope-description').textContent = draftDirty ? (currentSite ? 'Saving for this website…' : 'Preview on this tab only. Choose where to save.') : scope === 'site'
     ? `${currentSite} · This domain only`
-    : 'Global settings · edits preview on this tab first.';
+    : 'Global settings · edits save for this website.';
   $('scope-description').title = scope === 'site' ? currentSite : '';
   $('title-field').hidden = !settings.hideTitle;
   $('icon-field').hidden = !settings.hideIcon;

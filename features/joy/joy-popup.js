@@ -23,12 +23,14 @@ async function change(operation, payload = {}) {
     const edited = editJoy(joy, images, operation, payload);
     joy = edited.joy; images = edited.images; dirty = true; revision++;
     if (operation === 'add' || operation === 'upload') { selected = joy.charms.at(-1)?.id; $('joy-library').open = false; }
-    render(); preview(); report(masterEnabled ? 'Preview on this tab only. Choose where to save below.' : 'Extension paused. Settings can be saved; effects stay off.');
+    render(); preview(); report(core.siteKey(pageTab?.url) ? 'Saving for this website…' : masterEnabled ? 'Preview on this tab only. Choose where to save below.' : 'Extension paused. Settings can be saved; effects stay off.');
+    if (core.siteKey(pageTab?.url)) await saveJoy('apply-site');
   } catch(error) { report(error.message,true); throw error; }
 }
 async function saveJoy(operation) {
   const snapshot = { joy: structuredClone(joy), images: { ...images }, url: pageTab?.url }, savedRevision = revision;
-  queue = queue.catch(() => {}).then(async () => {
+  // Dispatch immediately: the background queue survives popup closure.
+  queue = (async () => {
     const response = await chrome.runtime.sendMessage({ type: 'joy', operation, ...snapshot });
     if (!response?.ok) throw new Error(response?.error || 'Could not save Joy.');
     savedGlobal = core.normalize(response.joy); sites = core.normalizeSites(response.joySites);
@@ -37,15 +39,15 @@ async function saveJoy(operation) {
       previewPort?.postMessage({ joy: null });
     }
     render(); report(operation === 'remove-site' ? 'Site configuration removed. This domain uses global Joy.' : operation === 'reset' ? 'Joy reset. Other components were preserved.' : 'Joy configuration saved.');
-  });
+  })();
   queue.catch(error => report(error.message,true)); return queue;
 }
 function render() {
   const domain = core.siteKey(pageTab?.url);
   $('joy-scope-site').disabled = !domain;
   $('joy-config-remove').disabled = !domain || !Object.hasOwn(sites,domain);
-  $('joy-scope-note').textContent = !masterEnabled ? 'Extension paused. Joy stays hidden.' : dirty ? 'Preview here only. Choose where to save.' : sites[domain]?.active ? domain + ' only' : 'Global Joy configuration';
-  if (document.querySelector('[data-panel="joy"]').classList.contains('active')) $('save-status').textContent = dirty ? 'Joy preview (not saved)' : 'Saved on this device';
+  $('joy-scope-note').textContent = !masterEnabled ? 'Extension paused. Joy stays hidden.' : dirty ? (domain ? 'Saving for this website…' : 'Preview here only. Choose where to save.') : sites[domain]?.active ? domain + ' only' : 'Global Joy configuration';
+  if (document.querySelector('[data-panel="joy"]').classList.contains('active')) $('save-status').textContent = dirty ? (domain ? 'Saving…' : 'Joy preview (not saved)') : 'Saved on this device';
   for (const key of ['enabled', 'locked', 'motion', 'effects']) $(`joy-${key}`).checked = joy[key];
   $('joy-breeze').value = joy.breeze; $('joy-breeze-value').textContent = `${Math.round(joy.breeze)}%`;
   $('joy-count').textContent = `${joy.charms.length}/6`;
@@ -80,12 +82,12 @@ for (const asset of core.assets) {
 }
 $('joy-selected').addEventListener('change', () => { selected = $('joy-selected').value; render(); });
 for (const key of ['enabled', 'locked', 'motion', 'effects']) $(`joy-${key}`).addEventListener('change', () => change('settings', { patch: { [key]: $(`joy-${key}`).checked } }).catch(() => {}));
-$('joy-breeze').addEventListener('change', () => change('settings', { patch: { breeze: Number($('joy-breeze').value) } }).catch(() => {}));
+$('joy-breeze').addEventListener('input', () => change('settings', { patch: { breeze: Number($('joy-breeze').value) } }).catch(() => {}));
 $('joy-breeze').addEventListener('input', () => { $('joy-breeze-value').textContent = `${$('joy-breeze').value}%`; });
 for (const button of document.querySelectorAll('[data-joy-design]')) button.addEventListener('click', () => change('update', { id: selected, patch: core.designs[button.dataset.joyDesign] }).catch(() => {}));
 for (const key of ['name', 'size', 'length', 'rope', 'color', 'thickness', 'opacity', 'shape', 'flip', 'x']) {
   const control = $(`joy-${key}`);
-  control.addEventListener('change', () => {
+  control.addEventListener(['range', 'text'].includes(control.type) ? 'input' : 'change', () => {
     let value = control.type === 'checkbox' ? control.checked : ['range', 'number'].includes(control.type) ? Number(control.value) : control.value;
     if (key === 'x') value /= 100;
     change('update', { id: selected, patch: { [key]: value } }).catch(() => {});
