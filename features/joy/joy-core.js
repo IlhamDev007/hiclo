@@ -49,71 +49,60 @@
     return normalize(key && Object.hasOwn(sites || {}, key) && sites[key].active !== false ? sites[key] : global);
   }
   function hookExit(type) { return { steel: 26, forged: 30, royal: 28, eye: 30 }[type] || 26; }
-  function relocate(rope, from, to) {
-    for (const p of rope.points) { p.x += to.x - from.x; p.px += to.x - from.x; p.y += to.y - from.y; p.py += to.y - from.y; }
-  }
-  function fit(rope, from, to, length) {
-    relocate(rope, from, to);
-    const ratio = length / rope.length;
-    for (const p of rope.points) {
-      p.x = to.x + (p.x - to.x) * ratio; p.px = to.x + (p.px - to.x) * ratio;
-      p.y = to.y + (p.y - to.y) * ratio; p.py = to.y + (p.py - to.y) * ratio;
+  const gravity = 1400, stiffness = 90, ropeDamping = 6.5, airDrag = 0.7;
+  const limit = (value, min, max) => Math.min(max, Math.max(min, value));
+  class RopeBody {
+    constructor(length = 150) { this.reset(length); }
+    reset(length = this.length) {
+      this.length = Math.max(20, length);
+      this.x = 0; this.y = this.length; this.vx = 0; this.vy = 0;
     }
-    rope.length = length; rope.currentLength *= ratio; rope.extensionVelocity *= ratio;
-  }
-  function createRope(x, y, length, angle = .18, count = 14) {
-    const points = Array.from({ length: count + 1 }, (_, i) => {
-      const px = x + Math.sin(angle) * length * i / count;
-      const py = y + Math.cos(angle) * length * i / count;
-      return { x: px, y: py, px, py };
-    });
-    return { points, length, currentLength: length, extensionVelocity: 0, count };
-  }
-  function step(rope, anchor, dt, wind = 0, drag = null) {
-    dt = clamp(dt, 1 / 120, 1 / 240, 1 / 60);
-    const points = rope.points;
-    if (drag) {
-      // The endpoint follows the hand. Stretch segment rest lengths instead of
-      // clamping the pointer to the original pendulum radius.
-      rope.currentLength = Math.max(rope.length, Math.hypot(drag.x - anchor.x, drag.y - anchor.y));
-      rope.extensionVelocity = 0;
-    } else {
-      const extension = rope.currentLength - rope.length;
-      rope.extensionVelocity += (-45 * extension - 14 * rope.extensionVelocity) * dt;
-      rope.extensionVelocity = Math.max(-rope.length * 2, Math.min(rope.length * 2, rope.extensionVelocity));
-      rope.currentLength += rope.extensionVelocity * dt;
-      if (rope.currentLength < rope.length) { rope.currentLength = rope.length; rope.extensionVelocity = 0; }
+    step(seconds, bounds, wind = 0) {
+      const dt = limit(seconds, 0, 0.04);
+      const steps = Math.max(1, Math.ceil(dt * 240)), h = dt / steps;
+      // Gravity stretches an unloaded rope slightly. Compensate so the size
+      // chosen in the popup is the settled hanging distance.
+      const unloadedLength = Math.max(1, this.length - gravity / stiffness);
+      for (let i = 0; i < steps; i++) {
+        const distance = Math.max(0.001, Math.hypot(this.x, this.y));
+        const nx = this.x / distance, ny = this.y / distance;
+        const stretch = distance - unloadedLength;
+        const radialSpeed = this.vx * nx + this.vy * ny;
+        // A rope pulls when taut; it never pushes a raised charm downward.
+        const tension = stretch > 0 ? Math.max(0, stiffness * stretch + ropeDamping * radialSpeed) : 0;
+        this.vx += (wind - tension * nx - airDrag * this.vx) * h;
+        this.vy += (gravity - tension * ny - airDrag * this.vy) * h;
+        this.x += this.vx * h; this.y += this.vy * h;
+        this.constrain(bounds);
+      }
+      if (this.settled && !wind) this.reset();
     }
-    for (let i = 1; i < points.length; i++) {
-      const p = points[i], damping = Math.pow(.99, dt * 120);
-      const maxVelocity = 600 * dt;
-      const vx = Math.max(-maxVelocity, Math.min(maxVelocity, p.x - p.px)) * damping;
-      const vy = Math.max(-maxVelocity, Math.min(maxVelocity, p.y - p.py)) * damping;
-      p.px = p.x; p.py = p.y;
-      p.x += vx + wind * dt * dt;
-      p.y += vy + 1000 * dt * dt;
+    drag(x, y, seconds) {
+      const dt = Math.max(seconds, 0.016);
+      this.vx = limit((x - this.x) / dt, -1000, 1000);
+      this.vy = limit((y - this.y) / dt, -1000, 1000);
+      this.x = x; this.y = y;
     }
-    const pin = () => {
-      Object.assign(points[0], { x: anchor.x, y: anchor.y, px: anchor.x, py: anchor.y });
-      if (drag) Object.assign(points.at(-1), { x: drag.x, y: drag.y });
-    };
-    const segment = rope.currentLength / rope.count;
-    for (let iteration = 0; iteration < 16; iteration++) {
-      pin();
-      for (let i = 0; i < rope.count; i++) {
-        const a = points[i], b = points[i + 1];
-        const dx = b.x - a.x, dy = b.y - a.y, distance = Math.hypot(dx, dy) || .001;
-        const correction = Math.max(0, distance - segment) / distance;
-        const wa = i === 0 ? 0 : 1;
-        const wb = i + 1 === rope.count ? (drag ? 0 : .35) : 1;
-        const sum = wa + wb;
-        if (!sum) continue;
-        a.x += dx * correction * wa / sum; a.y += dy * correction * wa / sum;
-        b.x -= dx * correction * wb / sum; b.y -= dy * correction * wb / sum;
+    constrain(bounds) {
+      if (!bounds) return;
+      for (const [axis, speed, min, max] of [
+        ["x", "vx", bounds.minX, bounds.maxX], ["y", "vy", bounds.minY, bounds.maxY]
+      ]) {
+        if (this[axis] < min) {
+          this[axis] = min; if (this[speed] < 0) this[speed] *= -0.22;
+        } else if (this[axis] > max) {
+          this[axis] = max; if (this[speed] > 0) this[speed] *= -0.22;
+        }
       }
     }
-    pin();
-    return points.at(-1);
+    nudge(horizontal = 1, vertical = 0) {
+      this.vx = limit(this.vx + horizontal * 260, -1000, 1000);
+      this.vy = limit(this.vy + vertical * 220, -1000, 1000);
+    }
+    get settled() {
+      return Math.abs(this.x) < 0.08 && Math.abs(this.y - this.length) < 0.08
+        && Math.abs(this.vx) < 0.8 && Math.abs(this.vy) < 0.8;
+    }
   }
-  globalThis.StillJoy = Object.freeze({ assets, designs, defaults, normalize, normalizeSites, resolve, siteKey, hookExit, relocate, fit, charm, createRope, step });
+  globalThis.StillJoy = Object.freeze({ assets, designs, defaults, normalize, normalizeSites, resolve, siteKey, hookExit, charm, RopeBody });
 })();

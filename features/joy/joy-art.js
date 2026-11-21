@@ -1,7 +1,8 @@
 // Canvas artwork and character choreography. Uploads never enter this module's
 // character-effects paths; their only motion comes from the shared rope model.
 (() => {
-  function hook(ctx, x, type) {
+  const hooks = new Map();
+  function paintHook(ctx, x, type) {
     ctx.save(); ctx.translate(x, 0);
     const gold = type === 'royal';
     const metal = ctx.createLinearGradient(-18, 0, 18, 0);
@@ -28,23 +29,44 @@
     if(type==='steel'){ctx.strokeStyle=metal;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,26,2,0,Math.PI*2);ctx.stroke();}
     ctx.restore();
   }
-  function rope(ctx, entry, anchor) {
-    const { item, rope } = entry;
+  function hook(ctx, x, type) {
+    const scale = ctx.getTransform().a;
+    const key = `${type}:${scale}`;
+    if (!hooks.has(key)) {
+      const stamp = new OffscreenCanvas(Math.ceil(48 * scale), Math.ceil(38 * scale));
+      const painter = stamp.getContext('2d');
+      painter.setTransform(scale, 0, 0, scale, 0, 0);
+      paintHook(painter, 24, type);
+      hooks.set(key, stamp);
+    }
+    const stamp = hooks.get(key);
+    ctx.drawImage(stamp, x - 24, 0, stamp.width / scale, stamp.height / scale);
+  }
+  function rope(ctx, item, anchor, bob, length, width) {
+    const distance = Math.hypot(bob.x - anchor.x, bob.y - anchor.y);
+    const slack = Math.sqrt(Math.max(0, length * length - distance * distance)) * .6;
+    const bend = anchor.x < width / 2 ? 1 : -1;
+    const controlX = x => Math.max(0, Math.min(width, x + bend * slack * 1.25));
+    const first = { x: controlX(anchor.x), y: anchor.y + (bob.y - anchor.y) * .4 + slack * .65 };
+    const second = { x: controlX(bob.x), y: anchor.y + (bob.y - anchor.y) * .8 + slack * .5 };
     if (item.rope !== 'none') {
-      const points = rope.points;
-      const trace = () => { ctx.beginPath(); ctx.moveTo(anchor.x, anchor.y); for (const p of points.slice(1)) ctx.lineTo(p.x, p.y); };
+      const trace = new Path2D();
+      trace.moveTo(anchor.x, anchor.y);
+      if (slack > 1) trace.bezierCurveTo(first.x, first.y, second.x, second.y, bob.x, bob.y);
+      else trace.lineTo(bob.x, bob.y);
       ctx.save(); ctx.globalAlpha = item.opacity / 100;
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-      ctx.strokeStyle = '#17212b65'; ctx.lineWidth = item.thickness + 1.5; trace(); ctx.stroke();
+      ctx.strokeStyle = '#17212b65'; ctx.lineWidth = item.thickness + 1.5; ctx.stroke(trace);
       ctx.strokeStyle = item.color; ctx.lineWidth = item.thickness;
-      ctx.setLineDash(item.rope === 'chain' ? [4, 2] : []); trace(); ctx.stroke();
+      ctx.setLineDash(item.rope === 'chain' ? [4, 2] : []); ctx.stroke(trace);
       if (item.rope === 'chain' || item.rope === 'braid') {
         ctx.strokeStyle = '#ffffffa0'; ctx.lineWidth = Math.max(.6, item.thickness * .35);
-        ctx.setLineDash(item.rope === 'chain' ? [1, 5] : [2, 3]); trace(); ctx.stroke();
+        ctx.setLineDash(item.rope === 'chain' ? [1, 5] : [2, 3]); ctx.stroke(trace);
       }
       ctx.restore();
     }
     hook(ctx, anchor.x, item.hook);
+    return { anchor, bob, slack, first, second };
   }
   function bolt(ctx, x, y, ex, ey, seed, strength) {
     ctx.beginPath(); ctx.moveTo(x, y);
@@ -56,10 +78,10 @@
     ctx.shadowColor = '#59b7ff'; ctx.shadowBlur = 9; ctx.stroke();
     ctx.strokeStyle = `rgba(228,248,255,${strength})`; ctx.lineWidth = 1; ctx.stroke();
   }
-  function effects(ctx, entry, time, angle) {
-    const { item, rope } = entry, bob = rope.points.at(-1), s = item.size;
+  function effects(ctx, entry, path, time, angle, size) {
+    const { item } = entry, { anchor, bob, slack, first, second } = path, s = size;
     const t = time / 1000, age = time - entry.actionAt;
-    ctx.save(); ctx.translate(bob.x, bob.y); ctx.rotate(angle * Math.PI / 180);
+    ctx.save(); ctx.translate(bob.x, bob.y); ctx.rotate(angle); ctx.scale(item.flip ? -1 : 1, 1);
     ctx.globalAlpha = item.opacity / 100;
     if (item.asset === 'hammer') {
       const pulse = .25 + .15 * Math.sin(t * 4);
@@ -106,10 +128,13 @@
       for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(0, -8); ctx.quadraticCurveTo(side * s * .09, -3, side * s * .07, s * .08); ctx.stroke(); }
     }
     ctx.restore();
-    if (item.asset === 'spider-man') {
-      const p = rope.points[Math.floor((t * 3) % rope.points.length)];
+    if (item.asset === 'spider-man' && item.rope !== 'none') {
+      const f = (t * .3) % 1, u = 1 - f;
+      const at = key => slack > 1
+        ? u ** 3 * anchor[key] + 3 * u * u * f * first[key] + 3 * u * f * f * second[key] + f ** 3 * bob[key]
+        : u * anchor[key] + f * bob[key];
       ctx.save(); ctx.fillStyle = '#e5f5ffb0'; ctx.shadowBlur = 6; ctx.shadowColor = '#a1d7ff';
-      ctx.beginPath(); ctx.arc(p.x, p.y, 1.6, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      ctx.beginPath(); ctx.arc(at('x'), at('y'), 1.6, 0, Math.PI * 2); ctx.fill(); ctx.restore();
     }
   }
   globalThis.StillJoyArt = Object.freeze({ hook, rope, effects });

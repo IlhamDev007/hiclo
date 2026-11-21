@@ -19,44 +19,65 @@ test('Joy configuration bounds entries, rejects invalid assets, and preserves cu
   assert.equal(core.charm({ asset: 'princess' }).rope, 'braid');
 });
 
-test('pulls beyond the rest length follow the hand and recoil without moving the top hook', () => {
-  const rope = core.createRope(200, 0, 140);
-  const anchor = { x: 200, y: 0 }, target = { x: 360, y: 380 };
-  const bob = core.step(rope, anchor, 1 / 120, 0, target);
-  assert.equal(bob.x, target.x); assert.equal(bob.y, target.y);
-  assert.ok(rope.currentLength > 400);
-  assert.equal(rope.length, 140);
-  for (let i = 0; i < 480; i++) core.step(rope, anchor, 1 / 120);
-  assert.ok(Math.abs(rope.currentLength - 140) < .1);
-  assert.equal(rope.points[0].x, 200); assert.equal(rope.points[0].y, 0);
-  for (const point of rope.points) assert.ok(Number.isFinite(point.x) && Number.isFinite(point.y));
+test('a stretched rope follows the drag and recoils past its rest length', () => {
+  const body = new core.RopeBody(140);
+  body.drag(0, 280, .1);
+  assert.equal(body.y, 280);
+  assert.equal(body.vy, 1000);
+  body.vy = 0;
+  body.step(1 / 60);
+  assert.ok(body.vy < 0);
+  let bounced = false;
+  for (let i = 0; i < 5400; i++) {
+    body.step(1 / 60);
+    bounced ||= body.y < 139;
+  }
+  assert.ok(bounced);
+  assert.ok(body.settled);
+  assert.equal(body.y, 140);
 });
 
-test('rope remains pinned and finite under gravity, wind, and dragging', () => {
-  const rope = core.createRope(250, 20, 180);
-  const anchor = { x: 250, y: 20 };
-  const initial = rope.points.at(-1).x;
-  for (let i = 0; i < 1200; i++) core.step(rope, anchor, 1 / 120, Math.sin(i / 60) * 30);
-  assert.equal(rope.points[0].x, anchor.x);
-  assert.equal(rope.points[0].y, anchor.y);
-  const bob = rope.points.at(-1);
-  assert.notEqual(bob.x, initial);
-  for (const point of rope.points) { assert.ok(Number.isFinite(point.x)); assert.ok(Number.isFinite(point.y)); }
-  assert.ok(Math.hypot(bob.x - anchor.x, bob.y - anchor.y) < 220);
-  const dragged = core.step(rope, anchor, 1 / 120, 0, { x: 300, y: 180 });
-  assert.equal(dragged.x, 300); assert.equal(dragged.y, 180);
-  anchor.x = 350;
-  for (let i = 0; i < 120; i++) core.step(rope, anchor, 1 / 120);
-  assert.equal(rope.points[0].x, 350);
+test('a raised charm falls freely while its rope is slack and then recoils', () => {
+  const body = new core.RopeBody(150);
+  body.drag(0, 40, .1);
+  body.vy = 0;
+  body.step(1 / 60);
+  assert.equal(body.x, 0);
+  assert.ok(body.vy > 20 && body.vy < 25);
+  assert.ok(body.y > 40);
+  let stretched = false;
+  for (let i = 0; i < 5400; i++) {
+    body.step(1 / 60);
+    stretched ||= body.y > 151;
+  }
+  assert.ok(stretched);
+  assert.ok(body.settled);
 });
 
-test('hook movement and viewport fitting preserve pose and do not inject velocity', () => {
-  const rope = core.createRope(200, 30, 180, .25);
-  const bob = rope.points.at(-1), oldX = bob.x, oldY = bob.y;
-  core.relocate(rope, { x: 200, y: 30 }, { x: 320, y: 30 });
-  assert.equal(bob.x, oldX + 120); assert.equal(bob.y, oldY);
-  assert.equal(bob.x - bob.px, 0); assert.equal(bob.y - bob.py, 0);
-  core.fit(rope, { x: 320, y: 30 }, { x: 180, y: 26 }, 90);
-  assert.ok(Math.abs(Math.hypot(bob.x - 180, bob.y - 26) - 90) < .001);
-  assert.equal(bob.x - bob.px, 0); assert.equal(bob.y - bob.py, 0);
+test('sideways throws cross the hook and settle after the breeze stops', () => {
+  const body = new core.RopeBody(180);
+  body.nudge(1, 0);
+  const positions = [];
+  for (let i = 0; i < 300; i++) {
+    body.step(1 / 120, undefined, Math.sin(i / 60) * 25);
+    positions.push(body.x);
+  }
+  assert.ok(positions.some(x => x > 10));
+  assert.ok(positions.some(x => x < -10));
+  for (let i = 0; i < 5400; i++) body.step(1 / 60);
+  assert.ok(body.settled);
+});
+
+test('long frame gaps and repeated throws stay within viewport bounds', () => {
+  const body = new core.RopeBody(100);
+  const bounds = { minX: -70, maxX: 70, minY: 0, maxY: 140 };
+  for (let i = 0; i < 500; i++) {
+    body.nudge(i % 2 ? 1 : -1, 1);
+    body.step(10, bounds);
+    assert.ok(body.x >= bounds.minX && body.x <= bounds.maxX);
+    assert.ok(body.y >= bounds.minY && body.y <= bounds.maxY);
+    assert.ok(Number.isFinite(body.vx) && Number.isFinite(body.vy));
+  }
+  body.reset(55);
+  assert.deepEqual([body.x, body.y, body.vx, body.vy], [0, 55, 0, 0]);
 });
